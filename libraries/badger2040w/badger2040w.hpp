@@ -5,7 +5,10 @@
 
 #include "drivers/uc8151/uc8151.hpp"
 #include "drivers/pcf85063a/pcf85063a.hpp"
+#include "pico/cyw43_arch.h"
+#include "cyw43.h"
 #include "libraries/pico_graphics/pico_graphics.hpp"
+
 
 namespace pimoroni {
 
@@ -13,18 +16,20 @@ namespace pimoroni {
   protected:
     uint32_t _button_states = 0;
     uint32_t _wake_button_states = 0;
+    std::unique_ptr<UC8151> display;
+    std::unique_ptr<PicoGraphics_Pen1BitY> graphics;
+    std::unique_ptr<PCF85063A> rtc;
+    cyw43_t wifi;
+
   private:
     void imageRow(const uint8_t *data, Rect rect);
 
   public:
-    std::unique_ptr<UC8151> uc8151;
-    std::unique_ptr<PicoGraphics_Pen1BitY> graphics;
-    std::unique_ptr<PCF85063A> pcf85063a;
     uint DISPLAY_WIDTH = 296;
     uint DISPLAY_HEIGHT = 128;
-    
+
     Badger2040W(){};
-    void init();
+    void setup();
     void update();
     void partial_update(Rect region);
     void halt();
@@ -39,9 +44,22 @@ namespace pimoroni {
     void update_button_states();
     uint32_t button_states();
 
-    void icon(const uint8_t *data, int index, int sheet_width, Rect rect);
-    void image(const uint8_t *data, Rect rect);
-    void image(const uint8_t *data);
+    // drawing
+    void clear(bool white);
+    void drawRectangle(int x, int y, int w, int h, bool white);
+
+    void drawText();
+
+    void drawImage(const uint8_t *data);
+    void drawImage(const uint8_t *data, Rect rect);
+
+    // wifi
+    int startWifiScan();
+    cyw43_ev_scan_result_t wifiGetScanResult();
+    bool isScanningWifi();
+    int wifiStatus();
+
+    void wifiLedOn(bool on);
 
   public:
     enum pin {

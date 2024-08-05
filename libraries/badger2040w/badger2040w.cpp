@@ -9,8 +9,7 @@
 
 namespace pimoroni {
 
-  void Badger2040W::init() {
-
+  void Badger2040W::setup() {
     gpio_set_function(ENABLE_3V3, GPIO_FUNC_SIO);
     gpio_set_dir(ENABLE_3V3, GPIO_OUT);
     gpio_put(ENABLE_3V3, 1);
@@ -36,7 +35,19 @@ namespace pimoroni {
     gpio_set_pulls(E, false, true);
 
     // PCF85063a handles the initialisation of the RTC GPIO pin
-    pcf85063a = std::make_unique<PCF85063A>(new I2C(I2C_BG_SDA, I2C_BG_SCL), (uint)RTC);
+    rtc = std::make_unique<PCF85063A>(new I2C(I2C_BG_SDA, I2C_BG_SCL), (uint)RTC);
+
+    stdio_init_all();
+
+    if (cyw43_arch_init() != 0) {
+      return;
+    }
+
+    cyw43_arch_enable_sta_mode();
+
+    cyw43_init(&wifi);
+
+    cyw43_wifi_set_up(&wifi, CYW43_ITF_STA, true, CYW43_COUNTRY_GERMANY);
 
     // read initial button states
     uint32_t mask = (1UL << A) | (1UL << B) | (1UL << C) | (1UL << D) | (1UL << E) | (1UL << RTC);
@@ -50,7 +61,7 @@ namespace pimoroni {
     led(0);
 
     // Initialise display driver and pico graphics library
-    uc8151 = std::make_unique<UC8151>(DISPLAY_WIDTH, DISPLAY_HEIGHT, ROTATE_0);
+    display = std::make_unique<UC8151>(DISPLAY_WIDTH, DISPLAY_HEIGHT, ROTATE_0);
     graphics = std::make_unique<PicoGraphics_Pen1BitY>(DISPLAY_WIDTH, DISPLAY_HEIGHT, nullptr);
   }
 
@@ -92,16 +103,37 @@ namespace pimoroni {
     }
   }
 
-  // Display a portion of an image (icon sheet) at rect 
-  void Badger2040W::icon(const uint8_t *data, int index, int sheet_width, Rect rect) {
-    for(auto y = 0; y < rect.h; y++) {
-      const uint8_t *scanline = data + ((y * sheet_width) >> 3) + ((rect.w * index) >> 3);
-      imageRow(scanline, Rect(rect.x, y + rect.y, rect.w, 0));
+  // Clear display
+  void Badger2040W::clear(bool white) {
+    for(auto y = 0; y < DISPLAY_HEIGHT; y++) {
+      for(auto x = 0; x < DISPLAY_WIDTH; x++) {
+        graphics->set_pen(white ? 15 : 0);
+        graphics->set_pixel(Point(x, y));
+      }
     }
   }
 
+  // draw rectangle
+  void Badger2040W::drawRectangle(int x0, int y0, int w, int h, bool white) {
+    for(auto y = 0; y < h; y++) {
+      for(auto x = 0; x < w; x++) {
+        graphics->set_pen(white ? 255 : 0);
+        graphics->set_pixel(Point(x + x0, y + y0));
+      }
+    }
+  }
+
+  // draw rectangle
+  void Badger2040W::drawText() {
+      graphics->set_font("bitmap8");
+      graphics->set_thickness(2);
+
+      graphics->set_pen(255);
+      graphics->text("yoyo", Point(10,10), DISPLAY_WIDTH);
+  }
+
   // Display an image at rect
-  void Badger2040W::image(const uint8_t *data, Rect rect) {
+  void Badger2040W::drawImage(const uint8_t *data, Rect rect) {
     for(auto y = 0; y < rect.h; y++) {
       const uint8_t *scanline = data + ((y * rect.w) >> 3);
       imageRow(scanline, Rect(rect.x, y + rect.y, rect.w, 0));
@@ -109,16 +141,16 @@ namespace pimoroni {
   }
 
   // Display an image that covers the entire screen
-  void Badger2040W::image(const uint8_t *data) {
-    image(data, Rect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT));
+  void Badger2040W::drawImage(const uint8_t *data) {
+    drawImage(data, Rect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT));
   }
 
   void Badger2040W::partial_update(Rect region) {
-    uc8151->partial_update(graphics.get(), region);
+    display->partial_update(graphics.get(), region);
   }
 
   void Badger2040W::update() {
-    uc8151->update(graphics.get());
+    display->update(graphics.get());
   }
 
 
@@ -149,4 +181,44 @@ namespace pimoroni {
       tight_loop_contents();
     }
   }
+
+  static cyw43_ev_scan_result_t scanResult;
+
+  static int _wifi_callback(void *, const cyw43_ev_scan_result_t *result) {
+    if (result) {
+      bcopy(result, &scanResult, sizeof(cyw43_ev_scan_result_t));
+    }
+    return 0;
+  }
+
+  int Badger2040W::startWifiScan() {
+    strcat(reinterpret_cast<char *>(scanResult.ssid[0]), "");
+    scanResult.ssid_len = 0;
+
+    cyw43_wifi_scan_options_t opts;
+
+    return cyw43_wifi_scan(
+      &wifi,
+      &opts,
+      nullptr,
+      _wifi_callback
+    );
+  }
+
+  cyw43_ev_scan_result_t Badger2040W::wifiGetScanResult() {
+      return scanResult;
+  }
+
+  bool Badger2040W::isScanningWifi() {
+    return cyw43_wifi_scan_active(&wifi);
+  }
+
+  int Badger2040W::wifiStatus() {
+    return cyw43_wifi_link_status(&wifi, CYW43_ITF_STA);
+  }
+
+  void Badger2040W::wifiLedOn(bool on) {
+      cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
+  }
+
 }

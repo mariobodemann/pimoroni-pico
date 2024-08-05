@@ -13,6 +13,7 @@ endif()
 if(NOT TARGET pimoroni_i2c)
   include(${CMAKE_CURRENT_LIST_DIR}/../../common/pimoroni_i2c.cmake)
 endif()
+
 set(LIB_NAME badger2040w)
 add_library(${LIB_NAME} INTERFACE)
 
@@ -29,4 +30,5 @@ target_link_libraries(${LIB_NAME} INTERFACE
   pico_graphics 
   pico_stdlib 
   hardware_pwm
-  pimoroni_i2c)
+  pimoroni_i2c
+)
